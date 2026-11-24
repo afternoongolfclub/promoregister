@@ -44,8 +44,19 @@ async function readOrders() {
   return all.filter(Boolean)
 }
 
+function pinOk(req: Request) {
+  const pin = Netlify.env.get("BOOTH_PIN")
+  if (!pin) return false // no PIN set: lock everything rather than leave it open
+  const given = req.headers.get("x-booth-pin") ?? ""
+  if (given.length !== pin.length) return false
+  let diff = 0
+  for (let i = 0; i < pin.length; i++) diff |= pin.charCodeAt(i) ^ given.charCodeAt(i)
+  return diff === 0
+}
+
 export default async (req: Request, context: Context) => {
   const route = new URL(req.url).pathname.replace(/^\/api\/?/, "")
+  if (!pinOk(req)) return new Response("PIN required", { status: 401 })
   try {
     if (req.method === "GET" && route === "state") {
       const [items, orders] = await Promise.all([readItems(), readOrders()])
@@ -100,4 +111,6 @@ export default async (req: Request, context: Context) => {
 
 export const config: Config = {
   path: ["/api/state", "/api/items", "/api/orders", "/api/orders/*"],
+  // Slows down PIN guessing; leaves room for several booth devices polling on one network.
+  rateLimit: { windowLimit: 300, windowSize: 60, aggregateBy: ["ip", "domain"] },
 }
