@@ -83,9 +83,16 @@ main{padding:18px max(3vw,14px) 40px;max-width:1400px;margin:0 auto}
 .dlg h2{margin:0 0 4px;font-size:24px}
 label{display:block;font-weight:600;margin:14px 0 6px}
 input[type=text],input[type=number],select{width:100%;font-size:18px;padding:12px;border-radius:10px;border:2px solid var(--line);background:var(--bg);min-height:50px}
-#dept{font-size:28px;font-weight:700;text-align:center;letter-spacing:.04em}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.chips button{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:8px 14px;min-height:40px;font-weight:600}
+#dept{font-size:22px;font-weight:700}
+.dlg.wide{width:min(820px,100%)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px;max-height:46vh;overflow:auto;padding:2px}
+.dkey{border:2px solid var(--line);background:var(--bg);border-radius:14px;padding:14px;min-height:84px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:4px}
+.dkey .dn{font-size:19px;font-weight:700;line-height:1.2}
+.dkey .dc{font-size:14px;color:var(--soft)}
+.dkey[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:#fff}
+.dkey[aria-pressed=true] .dc{color:#ffffffc0}
+.dkey.other{border-style:dashed}
+#otherWrap[hidden]{display:none}
 .summary{background:var(--bg);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:15px;color:var(--soft)}
 .err{color:var(--out);font-weight:600;min-height:1.5em;margin:6px 0 0}
 /* report + setup */
@@ -123,7 +130,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   <nav>
     <a href="#register" data-v="register">Register</a>
     <a href="#report" data-v="report">Report</a>
-    <a href="#items" data-v="items">Items &amp; stock</a>
+    <a href="#items" data-v="items">Setup</a>
   </nav>
   <div id="sync">Connecting…</div>
   <button id="lock" class="btn ghost" style="color:#fff;border-color:#ffffff66;min-height:40px;padding:8px 14px">Lock</button>
@@ -169,23 +176,32 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       <table class="stack setup" id="itemTable"></table>
       <p class="err" id="itemErr"></p>
     </div>
+    <div class="panel">
+      <div class="ph"><h2>Departments</h2>
+        <div class="row"><button class="btn" id="addDept">Add department</button><button class="btn primary" style="width:auto;min-height:48px;font-size:16px" id="saveDepts">Save departments</button></div>
+      </div>
+      <p class="note">These are the buttons shown at checkout. The number is optional and goes on the report and Excel file for charge-backs.</p>
+      <table class="stack setup" id="deptTable2"></table>
+      <p class="err" id="deptErr"></p>
+    </div>
   </section>
 </main>
 
 <div class="modal" id="modal" hidden>
-  <form class="dlg" id="coForm">
-    <h2>Check out</h2>
-    <div class="note">Who should this be charged to?</div>
-    <label for="dept">Department number</label>
-    <input type="text" id="dept" autocomplete="off" inputmode="text" required>
-    <div class="chips" id="recent"></div>
+  <form class="dlg wide" id="coForm">
+    <h2>Which department?</h2>
+    <div class="summary" id="coSum" style="margin-top:6px"></div>
+    <div class="dgrid" id="dgrid" role="group" aria-label="Departments"></div>
+    <div id="otherWrap" hidden>
+      <label for="dept">Department name or number</label>
+      <input type="text" id="dept" autocomplete="off">
+    </div>
     <label for="who">Name or note (optional)</label>
     <input type="text" id="who" autocomplete="off">
-    <div class="summary" id="coSum"></div>
     <p class="err" id="coErr"></p>
-    <div class="row" style="justify-content:flex-end;margin-top:8px">
+    <div class="row" style="justify-content:flex-end;margin-top:4px">
       <button type="button" class="btn ghost" id="cancel">Back</button>
-      <button type="submit" class="btn" style="background:var(--blue);color:#fff" id="confirm">Complete order</button>
+      <button type="submit" class="btn" style="background:var(--blue);color:#fff;min-width:180px" id="confirm" disabled>Complete order</button>
     </div>
   </form>
 </div>
@@ -207,10 +223,11 @@ const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
 const money=n=>'$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
-let items=[],orders=[],cart={};
+let items=[],depts=[],orders=[],cart={};
 
 /* ---------- storage (Netlify backend) ---------- */
 function setSync(t){$('#sync').textContent=t}
+function cleanDept(d){return{id:String(d.id||Math.random().toString(36).slice(2,9)),name:String(d.name||'Department'),code:String(d.code||'')}}
 function cleanItem(i){return{id:String(i.id||Math.random().toString(36).slice(2,9)),name:String(i.name||'Item'),kind:i.kind==='bag'?'bag':'addon',stock:Math.max(0,Math.round(num(i.stock))),cost:Math.max(0,num(i.cost))}}
 let pin='';try{pin=localStorage.getItem('promo.pin')||''}catch(e){}
 async function api(path,opt={}){
@@ -229,9 +246,10 @@ async function refresh(){
   if(polling)return;polling=true;
   try{const s=await api('state');
     const its=(Array.isArray(s.items)?s.items:[]).map(cleanItem),ords=(Array.isArray(s.orders)?s.orders:[]).filter(o=>o&&Array.isArray(o.lines));
-    const sig=JSON.stringify([its,ords.map(o=>o.id)]);
-    const itemsChanged=JSON.stringify(its)!==JSON.stringify(items);
-    items=its;orders=ords;
+    const dps=(Array.isArray(s.departments)?s.departments:[]).map(cleanDept);
+    const sig=JSON.stringify([its,dps,ords.map(o=>o.id)]);
+    const itemsChanged=JSON.stringify([its,dps])!==JSON.stringify([items,depts]);
+    items=its;depts=dps;orders=ords;
     if(sig!==lastSig){lastSig=sig;renderAll(itemsChanged)}
     setSync('Live: synced across devices · updated '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}));
   }catch(e){if(e.message!=='PIN')setSync('Can’t reach the server right now. Retrying…')}
@@ -239,6 +257,7 @@ async function refresh(){
 }
 function start(){refresh();setInterval(()=>{if(!document.hidden)refresh()},5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()})}
 async function saveItems(list){await api('items',{method:'PUT',body:JSON.stringify({items:list})});items=list;await refresh();renderAll(true)}
+async function saveDepts(list){await api('departments',{method:'PUT',body:JSON.stringify({departments:list})});depts=list;await refresh();renderAll(true)}
 async function addOrder(o){await api('orders',{method:'POST',body:JSON.stringify(o)});await refresh()}
 async function delOrder(id){await api('orders/'+encodeURIComponent(id),{method:'DELETE'});await refresh()}
 
@@ -250,7 +269,7 @@ const sorted=()=>[...items].sort((a,b)=>(a.kind==='bag'?0:1)-(b.kind==='bag'?0:1
 /* ---------- register ---------- */
 function renderKeys(){
   const g=givenOut(),bags=items.filter(i=>i.kind==='bag'),adds=items.filter(i=>i.kind!=='bag');
-  if(!items.length){$('#keys').innerHTML='<div class="panel"><h2>No items yet</h2><p>Go to <a href="#items">Items &amp; stock</a> to add the promo bag and add-ons.</p></div>';return}
+  if(!items.length){$('#keys').innerHTML='<div class="panel"><h2>No items yet</h2><p>Go to <a href="#items">Setup</a> to add the promo bag and add-ons.</p></div>';return}
   const key=i=>{const q=cart[i.id]||0,l=left(i.id,g)-q,low=l>0&&l<=Math.max(5,Math.ceil(i.stock*.1)),nm=esc(i.name);
     return `<div class="key ${i.kind==='bag'?'bag':''} ${low?'low':''} ${l<=0&&!q?'out':''} ${q?'in':''}">
       <button class="hit" data-add="${esc(i.id)}" ${l<=0?'disabled':''} aria-label="Add one ${nm}">
@@ -277,25 +296,37 @@ document.addEventListener('click',e=>{
 $('#clear').onclick=()=>{cart={};renderKeys();renderTicket()};
 
 /* ---------- checkout ---------- */
-function recentDepts(){const seen=[];for(const o of [...orders].sort((a,b)=>num(b.ts)-num(a.ts))){const d=String(o.dept||'');if(d&&!seen.includes(d))seen.push(d);if(seen.length>=8)break}return seen}
+let pick=null; // {name, code} or {other:true}
+function renderDeptGrid(){
+  // most recently used departments first, so repeat visitors are one tap away
+  const last={};for(const o of orders){const t=num(o.ts);if(!last[o.dept]||t>last[o.dept])last[o.dept]=t}
+  const list=[...depts].sort((a,b)=>(last[b.name]||0)-(last[a.name]||0));
+  $('#dgrid').innerHTML=list.map(d=>`<button type="button" class="dkey" data-dpick="${esc(d.id)}" aria-pressed="${pick&&pick.id===d.id}"><span class="dn">${esc(d.name)}</span><span class="dc">${d.code?'#'+esc(d.code):'&nbsp;'}</span></button>`).join('')+
+    `<button type="button" class="dkey other" data-dpick="__other" aria-pressed="${!!(pick&&pick.other)}"><span class="dn">Other…</span><span class="dc">Type it in</span></button>`;
+  $('#otherWrap').hidden=!(pick&&pick.other);
+  $('#confirm').disabled=!pick;
+}
 $('#checkout').onclick=()=>{
-  $('#dept').value='';$('#who').value='';$('#coErr').textContent='';
-  $('#recent').innerHTML=recentDepts().map(d=>`<button type="button" data-dept="${esc(d)}">${esc(d)}</button>`).join('');
+  pick=null;$('#dept').value='';$('#who').value='';$('#coErr').textContent='';
   $('#coSum').textContent=Object.keys(cart).map(id=>`${cart[id]} × ${items.find(i=>i.id===id)?.name||''}`).join(' · ');
-  $('#modal').hidden=false;setTimeout(()=>$('#dept').focus(),30);
+  renderDeptGrid();$('#modal').hidden=false;
 };
-$('#recent').onclick=e=>{const b=e.target.closest('[data-dept]');if(b){$('#dept').value=b.dataset.dept;$('#who').focus()}};
+$('#dgrid').onclick=e=>{const b=e.target.closest('[data-dpick]');if(!b)return;const id=b.dataset.dpick;
+  if(id==='__other'){pick={other:true};renderDeptGrid();setTimeout(()=>$('#dept').focus(),30);return}
+  const d=depts.find(x=>x.id===id);if(d){pick={id:d.id,name:d.name,code:d.code};renderDeptGrid();$('#coErr').textContent=''}};
 $('#cancel').onclick=()=>{$('#modal').hidden=true};
 $('#modal').onclick=e=>{if(e.target.id==='modal')$('#modal').hidden=true};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').hidden=true});
 $('#coForm').onsubmit=async e=>{
-  e.preventDefault();const dept=$('#dept').value.trim();
-  if(!dept){$('#coErr').textContent='Enter a department number.';return}
+  e.preventDefault();
+  if(!pick){$('#coErr').textContent='Tap a department.';return}
+  const dept=pick.other?$('#dept').value.trim():pick.name,deptCode=pick.other?'':pick.code;
+  if(!dept){$('#coErr').textContent='Type the department name or number.';$('#dept').focus();return}
   const g=givenOut();
   for(const id in cart)if(left(id,g)<cart[id]){$('#coErr').textContent='Not enough '+(items.find(i=>i.id===id)?.name||'stock')+' left. Adjust the order.';return}
   const lines=Object.keys(cart).map(id=>{const it=items.find(i=>i.id===id);return{id,name:it.name,kind:it.kind,qty:cart[id],cost:it.cost}});
   $('#confirm').disabled=true;
-  try{await addOrder({ts:Date.now(),dept,note:$('#who').value.trim(),lines});
+  try{await addOrder({ts:Date.now(),dept,deptCode,note:$('#who').value.trim(),lines});
     cart={};$('#modal').hidden=true;renderKeys();renderTicket();toast('Order saved — charged to '+dept);
   }catch(err){$('#coErr').textContent='Couldn’t save. Check the connection and try again.'}
   $('#confirm').disabled=false;
@@ -303,7 +334,7 @@ $('#coForm').onsubmit=async e=>{
 
 /* ---------- report ---------- */
 function deptRows(){
-  const m={};for(const o of orders){const d=String(o.dept||'—');const r=m[d]||(m[d]={dept:d,orders:0,qty:{},items:0,cost:0});r.orders++;
+  const m={};for(const o of orders){const d=String(o.dept||'—');const r=m[d]||(m[d]={dept:d,code:'',orders:0,qty:{},items:0,cost:0});r.orders++;if(o.deptCode)r.code=String(o.deptCode);else if(!r.code){const dd=depts.find(x=>x.name===d);if(dd)r.code=dd.code}
     for(const l of o.lines){r.qty[l.id]=(r.qty[l.id]||0)+num(l.qty);r.items+=num(l.qty);r.cost+=num(l.qty)*num(l.cost)}}
   return Object.values(m).sort((a,b)=>a.dept.localeCompare(b.dept,undefined,{numeric:true}));
 }
@@ -314,16 +345,16 @@ function renderReport(){
   const tot=rows.reduce((s,r)=>s+r.cost,0),totItems=rows.reduce((s,r)=>s+r.items,0);
   $('#cards').innerHTML=[[orders.length,'Orders'],[bags,'Bags given out'],[totItems,'Total items'],[rows.length,'Departments'],...(hasCost?[[money(tot),'Total to charge back']]:[])]
     .map(([v,l])=>`<div class="card"><div class="v">${esc(v)}</div><div class="l">${l}</div></div>`).join('');
-  $('#deptTable').innerHTML=rows.length?`<thead><tr><th>Department</th><th class="n">Orders</th>${cols.map(c=>`<th class="n">${esc(c.name)}</th>`).join('')}<th class="n">Total items</th>${hasCost?'<th class="n">Charge</th>':''}</tr></thead><tbody>`+
-    rows.map(r=>`<tr><td><b>${esc(r.dept)}</b></td><td class="n">${r.orders}</td>${cols.map(c=>`<td class="n">${r.qty[c.id]||''}</td>`).join('')}<td class="n"><b>${r.items}</b></td>${hasCost?`<td class="n"><b>${money(r.cost)}</b></td>`:''}</tr>`).join('')+'</tbody>'
+  $('#deptTable').innerHTML=rows.length?`<thead><tr><th>Department</th><th>Dept #</th><th class="n">Orders</th>${cols.map(c=>`<th class="n">${esc(c.name)}</th>`).join('')}<th class="n">Total items</th>${hasCost?'<th class="n">Charge</th>':''}</tr></thead><tbody>`+
+    rows.map(r=>`<tr><td><b>${esc(r.dept)}</b></td><td>${esc(r.code)}</td><td class="n">${r.orders}</td>${cols.map(c=>`<td class="n">${r.qty[c.id]||''}</td>`).join('')}<td class="n"><b>${r.items}</b></td>${hasCost?`<td class="n"><b>${money(r.cost)}</b></td>`:''}</tr>`).join('')+'</tbody>'
     :'<tbody><tr><td class="empty">No orders yet.</td></tr></tbody>';
-  $('#costNote').textContent=hasCost?'Charges use the cost each that was set when the order was checked out.':'Add a cost each on Items & stock to see dollar charge-backs.';
+  $('#costNote').textContent=hasCost?'Charges use the cost each that was set when the order was checked out.':'Add a cost each on Setup to see dollar charge-backs.';
   $('#invTable').innerHTML=`<thead><tr><th>Item</th><th class="n">Starting</th><th class="n">Given out</th><th class="n">Left</th><th>Level</th></tr></thead><tbody>`+
     (sorted().map(i=>{const out=g[i.id]||0,l=i.stock-out,p=i.stock?Math.max(0,Math.min(100,l/i.stock*100)):0;
       return `<tr><td>${esc(i.name)}</td><td class="n">${i.stock}</td><td class="n">${out}</td><td class="n"><b>${l}</b></td><td><div class="bar"><i class="${p<=10?'low':''}" style="width:${p}%"></i></div></td></tr>`}).join('')||'<tr><td>No items yet.</td></tr>')+'</tbody>';
   const os=[...orders].sort((a,b)=>num(b.ts)-num(a.ts));
   $('#orderTable').innerHTML=`<thead><tr><th>Time</th><th>Department</th><th>Items</th><th>Note</th><th></th></tr></thead><tbody>`+
-    (os.map(o=>`<tr><td>${esc(new Date(num(o.ts)).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</td><td><b>${esc(o.dept)}</b></td><td>${o.lines.map(l=>esc(num(l.qty)+' × '+l.name)).join(', ')}</td><td>${esc(o.note||'')}</td><td><button class="del" data-del="${esc(o.id)}">Delete</button></td></tr>`).join('')||'<tr><td>No orders yet.</td></tr>')+'</tbody>';
+    (os.map(o=>`<tr><td>${esc(new Date(num(o.ts)).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</td><td><b>${esc(o.dept)}</b>${o.deptCode?' #'+esc(o.deptCode):''}</td><td>${o.lines.map(l=>esc(num(l.qty)+' × '+l.name)).join(', ')}</td><td>${esc(o.note||'')}</td><td><button class="del" data-del="${esc(o.id)}">Delete</button></td></tr>`).join('')||'<tr><td>No orders yet.</td></tr>')+'</tbody>';
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-del]');if(!b)return;
@@ -335,14 +366,14 @@ document.addEventListener('click',async e=>{
 $('#xlsx').onclick=async()=>{
   if(typeof XLSX==='undefined')return toast('Excel tool didn’t load. Reload the page.');
   const cols=itemCols(),rows=deptRows(),g=givenOut(),wb=XLSX.utils.book_new();
-  const s1=[['Department','Orders',...cols.map(c=>c.name),'Total items','Charge ($)'],...rows.map(r=>[r.dept,r.orders,...cols.map(c=>r.qty[c.id]||0),r.items,+r.cost.toFixed(2)])];
-  s1.push(['Total',orders.length,...cols.map(c=>rows.reduce((s,r)=>s+(r.qty[c.id]||0),0)),rows.reduce((s,r)=>s+r.items,0),+rows.reduce((s,r)=>s+r.cost,0).toFixed(2)]);
-  const s2=[['Order time','Department','Name / note','Item','Qty','Cost each ($)','Line charge ($)']];
-  for(const o of [...orders].sort((a,b)=>num(a.ts)-num(b.ts)))for(const l of o.lines)s2.push([new Date(num(o.ts)),String(o.dept),o.note||'',l.name,num(l.qty),num(l.cost),+(num(l.qty)*num(l.cost)).toFixed(2)]);
+  const s1=[['Department','Dept #','Orders',...cols.map(c=>c.name),'Total items','Charge ($)'],...rows.map(r=>[r.dept,r.code,r.orders,...cols.map(c=>r.qty[c.id]||0),r.items,+r.cost.toFixed(2)])];
+  s1.push(['Total','',orders.length,...cols.map(c=>rows.reduce((s,r)=>s+(r.qty[c.id]||0),0)),rows.reduce((s,r)=>s+r.items,0),+rows.reduce((s,r)=>s+r.cost,0).toFixed(2)]);
+  const s2=[['Order time','Department','Dept #','Name / note','Item','Qty','Cost each ($)','Line charge ($)']];
+  for(const o of [...orders].sort((a,b)=>num(a.ts)-num(b.ts)))for(const l of o.lines)s2.push([new Date(num(o.ts)),String(o.dept),String(o.deptCode||depts.find(x=>x.name===o.dept)?.code||''),o.note||'',l.name,num(l.qty),num(l.cost),+(num(l.qty)*num(l.cost)).toFixed(2)]);
   const s3=[['Item','Type','Starting','Given out','Left'],...sorted().map(i=>[i.name,i.kind==='bag'?'Bag':'Add-on',i.stock,g[i.id]||0,i.stock-(g[i.id]||0)])];
   const add=(data,name,w)=>{const ws=XLSX.utils.aoa_to_sheet(data,{cellDates:true});ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,name);return ws};
-  add(s1,'Charge-backs',[14,8,...cols.map(c=>Math.max(10,c.name.length+2)),12,12]);
-  const w2=add(s2,'All orders',[20,14,22,24,6,14,15]);
+  add(s1,'Charge-backs',[18,10,8,...cols.map(c=>Math.max(10,c.name.length+2)),12,12]);
+  const w2=add(s2,'All orders',[20,18,10,22,24,6,14,15]);
   for(let r=1;r<s2.length;r++){const c=w2[XLSX.utils.encode_cell({r,c:0})];if(c)c.z='mmm d, yyyy h:mm AM/PM'}
   add(s3,'Inventory',[26,10,10,10,10]);
   const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
@@ -377,16 +408,37 @@ $('#saveItems').onclick=async()=>{
   catch(err){$('#itemErr').textContent='Couldn’t save. Check the connection and try again.'}
 };
 
+let ddraft=[],ddirty=false;
+function loadDeptDraft(){ddraft=depts.map(d=>({...d}))}
+function renderDeptSetup(){
+  const used={};for(const o of orders)used[o.dept]=(used[o.dept]||0)+1;
+  $('#deptTable2').innerHTML=`<thead><tr><th>Department name</th><th>Dept number</th><th class="n">Orders</th><th></th></tr></thead><tbody>`+
+    ddraft.map((d,k)=>`<tr><td><input type="text" data-dk="${k}" data-f="name" value="${esc(d.name)}" aria-label="Department name"></td>
+      <td><input type="text" data-dk="${k}" data-f="code" value="${esc(d.code)}" placeholder="Optional" aria-label="Department number"></td>
+      <td class="n">${used[d.name]||0}</td><td><button class="del" data-drm="${k}">Remove</button></td></tr>`).join('')+
+    (ddraft.length?'':'<tr><td>No departments yet.</td></tr>')+'</tbody>';
+}
+$('#deptTable2').addEventListener('input',e=>{const t=e.target,k=t.dataset.dk;if(k==null)return;ddraft[k][t.dataset.f]=t.value;ddirty=true});
+$('#deptTable2').addEventListener('click',e=>{const b=e.target.closest('[data-drm]');if(b){ddraft.splice(+b.dataset.drm,1);ddirty=true;renderDeptSetup()}});
+$('#addDept').onclick=()=>{ddraft.push({id:Math.random().toString(36).slice(2,9),name:'',code:''});ddirty=true;renderDeptSetup();
+  const ins=document.querySelectorAll('#deptTable2 input[data-f=name]');ins[ins.length-1]?.focus()};
+$('#saveDepts').onclick=async()=>{
+  const list=ddraft.filter(d=>String(d.name).trim()).map(d=>cleanDept({...d,name:String(d.name).trim(),code:String(d.code).trim()}));
+  $('#deptErr').textContent='';
+  try{await saveDepts(list);ddirty=false;loadDeptDraft();renderDeptSetup();toast('Departments saved')}
+  catch(err){$('#deptErr').textContent='Couldn’t save. Check the connection and try again.'}
+};
+
 /* ---------- shell ---------- */
 let tt;function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(tt);tt=setTimeout(()=>el.hidden=true,2600)}
 function view(){const v=['register','report','items'].includes(location.hash.slice(1))?location.hash.slice(1):'register';
   for(const s of ['register','report','items'])$('#v-'+s).hidden=s!==v;
   document.querySelectorAll('nav a').forEach(a=>a.toggleAttribute('aria-current',a.dataset.v===v)&&a.setAttribute('aria-current','page'));
-  if(v==='items'&&!dirty){loadDraft();renderSetup()}if(v==='report')renderReport()}
+  if(v==='items'){if(!dirty){loadDraft();renderSetup()}if(!ddirty){loadDeptDraft();renderDeptSetup()}}if(v==='report')renderReport()}
 function renderAll(itemsChanged){
   for(const id in cart)if(!items.some(i=>i.id===id))delete cart[id];
   renderKeys();renderTicket();if(!$('#v-report').hidden)renderReport();
-  if(itemsChanged&&!$('#v-items').hidden&&!dirty){loadDraft();renderSetup()}
+  if(itemsChanged&&!$('#v-items').hidden){if(!dirty){loadDraft();renderSetup()}if(!ddirty){loadDeptDraft();renderDeptSetup()}}
 }
 addEventListener('hashchange',view);view();renderAll(true);
 start();
