@@ -36,18 +36,25 @@ main{padding:18px max(3vw,14px) 40px;max-width:1400px;margin:0 auto}
 .reg{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
 @media(max-width:860px){.reg{grid-template-columns:minmax(0,1fr)}}
 .keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-.key{position:relative;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:14px;min-height:118px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:8px;transition:transform .08s}
-.key:active{transform:scale(.97)}
+.key{position:relative;background:var(--panel);border:2px solid var(--line);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.key .hit{flex:1;border:0;background:transparent;color:inherit;padding:14px 14px 8px;min-height:92px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:8px;transition:transform .08s}
+.key .hit:active{transform:scale(.97)}
 .key .nm{font-size:18px;font-weight:700;line-height:1.2}
 .key .st{font-size:14px;color:var(--soft)}
 .key .st b{font-size:20px;color:var(--ink)}
 .key.low .st b{color:var(--low)}.key.low{border-color:var(--low)}
-.key:disabled{opacity:.5;cursor:not-allowed}.key:disabled .st b{color:var(--out)}
-.key.bag{grid-column:span 2;background:var(--mid);border-color:var(--mid);color:#fff;min-height:150px}
+.key.out .hit{opacity:.5;cursor:not-allowed}.key.out .st b{color:var(--out)}
+.kq{display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:center;border-top:1px solid var(--line)}
+.kq button{height:48px;border:0;background:var(--pale);color:var(--ink);font-size:24px;font-weight:800}
+.kq button:disabled{opacity:.35;cursor:not-allowed}
+.kq span{text-align:center;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.kq span.z{color:var(--soft);font-weight:600}
+.key.in{border-color:var(--blue)}
+.key.bag{grid-column:span 2;background:var(--mid);border-color:var(--mid);color:#fff}
+.key.bag .hit{min-height:124px}
 .key.bag .nm{font-size:26px}.key.bag .st,.key.bag .st b{color:#fff}
+.key.bag .kq{border-top-color:#ffffff40}.key.bag .kq button{background:#ffffff26;color:#fff}.key.bag .kq span.z{color:#ffffffb0}
 .key.bag.low{border-color:#ffb35c}
-.key .badge{position:absolute;top:10px;right:10px;background:var(--blue);color:#fff;border-radius:999px;min-width:30px;height:30px;display:grid;place-items:center;font-weight:800;font-size:15px;padding:0 8px}
-.key.bag .badge{background:#fff;color:var(--blue)}
 @media(max-width:420px){.keys{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .sec{font-size:13px;font-weight:700;color:var(--soft);margin:18px 0 8px;letter-spacing:.02em}
 .sec:first-child{margin-top:0}
@@ -106,7 +113,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .setup td input,.setup td select{font-size:16px;min-height:44px;padding:8px}
 .setup td.w{width:110px}
 @media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7.5em;margin-inline-start:-8em;white-space:normal;color:var(--soft)}.stack td:empty{display:none}.setup td.w{width:auto}}
-@media(prefers-reduced-motion:reduce){.key{transition:none}}
+@media(prefers-reduced-motion:reduce){.key .hit{transition:none}}
 </style>
 <script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
 </head>
@@ -244,11 +251,14 @@ const sorted=()=>[...items].sort((a,b)=>(a.kind==='bag'?0:1)-(b.kind==='bag'?0:1
 function renderKeys(){
   const g=givenOut(),bags=items.filter(i=>i.kind==='bag'),adds=items.filter(i=>i.kind!=='bag');
   if(!items.length){$('#keys').innerHTML='<div class="panel"><h2>No items yet</h2><p>Go to <a href="#items">Items &amp; stock</a> to add the promo bag and add-ons.</p></div>';return}
-  const key=i=>{const l=left(i.id,g)-(cart[i.id]||0),low=l>0&&l<=Math.max(5,Math.ceil(i.stock*.1));
-    return `<button class="key ${i.kind==='bag'?'bag':''} ${low?'low':''}" data-add="${esc(i.id)}" ${l<=0?'disabled':''}>
-      ${cart[i.id]?`<span class="badge">${cart[i.id]}</span>`:''}
-      <span class="nm">${esc(i.name)}</span>
-      <span class="st">${l<=0?'<b>Out of stock</b>':`<b>${l}</b> left`}</span></button>`};
+  const key=i=>{const q=cart[i.id]||0,l=left(i.id,g)-q,low=l>0&&l<=Math.max(5,Math.ceil(i.stock*.1)),nm=esc(i.name);
+    return `<div class="key ${i.kind==='bag'?'bag':''} ${low?'low':''} ${l<=0&&!q?'out':''} ${q?'in':''}">
+      <button class="hit" data-add="${esc(i.id)}" ${l<=0?'disabled':''} aria-label="Add one ${nm}">
+        <span class="nm">${nm}</span>
+        <span class="st">${l<=0?(q?'<b>0</b> left':'<b>Out of stock</b>'):`<b>${l}</b> left`}</span></button>
+      <div class="kq"><button data-dec="${esc(i.id)}" ${q?'':'disabled'} aria-label="One less ${nm}">−</button>
+        <span class="${q?'':'z'}" aria-label="In order">${q}</span>
+        <button data-add="${esc(i.id)}" ${l<=0?'disabled':''} aria-label="One more ${nm}">+</button></div></div>`};
   $('#keys').innerHTML=(bags.length?`<div class="sec">Promo bag</div><div class="keys">${bags.map(key).join('')}</div>`:'')+
     (adds.length?`<div class="sec">Add-ons</div><div class="keys">${adds.map(key).join('')}</div>`:'');
 }
