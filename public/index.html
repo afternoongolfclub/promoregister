@@ -100,7 +100,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bar{height:8px;background:var(--pale);border-radius:99px;overflow:hidden;min-width:60px}
 .bar i{display:block;height:100%;background:var(--mid)}
 .bar i.low{background:var(--low)}
-.del{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 10px;min-height:36px;font-size:14px}
+.del{min-width:132px;border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 10px;min-height:36px;font-size:14px}
 .del.armed{background:var(--out);color:#fff;border-color:var(--out)}
 .note{font-size:14px;color:var(--soft)}
 .setup td input,.setup td select{font-size:16px;min-height:44px;padding:8px}
@@ -317,7 +317,7 @@ function renderReport(){
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-del]');if(!b)return;
-  if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='Tap to confirm';setTimeout(()=>{b.classList.remove('armed');b.textContent='Delete'},3000);return}
+  if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='Tap to confirm';setTimeout(()=>{b.classList.remove('armed');b.textContent='Delete'},6000);return}
   try{await delOrder(b.dataset.del);toast('Order deleted')}catch(err){toast('Couldn’t delete that order')}
 });
 
