@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tradeshow Promo Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* VOICE: a booth register: fast, plain, big targets, nothing to read twice
+   IDEA: a point-of-sale till: item keys on the left, a printed ticket on the right
+   PICTURE: the key grid itself, with the promo bag as the big key and stock counts on every key
+   COLOUR and TYPE: company blues #1F4E79 / #2E75B6 / #D6E4F0, white keys, amber for low stock; Source Sans 3
+   LAYOUT: top bar with three tabs; register = keys + ticket; report and setup are calm tables */
+:root{color-scheme:light dark;
+--bg:light-dark(#eef3f8,#0d1620);--panel:light-dark(#fff,#15212e);--ink:light-dark(#10202f,#e6eef6);
+--soft:light-dark(#5b6b7b,#9aabbc);--line:light-dark(#d3dde7,#263545);--blue:#1F4E79;--mid:#2E75B6;
+--pale:light-dark(#D6E4F0,#1c3550);--low:light-dark(#b35900,#ffb35c);--out:light-dark(#b3261e,#ff8a80)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Source Sans 3",system-ui,sans-serif;overflow-x:clip}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--mid);outline-offset:2px}
+header{background:var(--blue);color:#fff;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:12px max(3vw,14px)}
+header h1{font-size:22px;margin:0;font-weight:800;line-height:1.1;flex:1 1 auto}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav a{color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;min-height:44px;display:inline-flex;align-items:center}
+nav a[aria-current=page]{background:#fff;color:var(--blue)}
+#sync{font-size:13px;opacity:.85;flex-basis:100%}
+@media(min-width:760px){#sync{flex-basis:auto}}
+main{padding:18px max(3vw,14px) 40px;max-width:1400px;margin:0 auto}
+.view[hidden]{display:none}
+/* register */
+.reg{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+@media(max-width:860px){.reg{grid-template-columns:minmax(0,1fr)}}
+.keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.key{position:relative;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:14px;min-height:118px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:8px;transition:transform .08s}
+.key:active{transform:scale(.97)}
+.key .nm{font-size:18px;font-weight:700;line-height:1.2}
+.key .st{font-size:14px;color:var(--soft)}
+.key .st b{font-size:20px;color:var(--ink)}
+.key.low .st b{color:var(--low)}.key.low{border-color:var(--low)}
+.key:disabled{opacity:.5;cursor:not-allowed}.key:disabled .st b{color:var(--out)}
+.key.bag{grid-column:span 2;background:var(--mid);border-color:var(--mid);color:#fff;min-height:150px}
+.key.bag .nm{font-size:26px}.key.bag .st,.key.bag .st b{color:#fff}
+.key.bag.low{border-color:#ffb35c}
+.key .badge{position:absolute;top:10px;right:10px;background:var(--blue);color:#fff;border-radius:999px;min-width:30px;height:30px;display:grid;place-items:center;font-weight:800;font-size:15px;padding:0 8px}
+.key.bag .badge{background:#fff;color:var(--blue)}
+@media(max-width:420px){.keys{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.sec{font-size:13px;font-weight:700;color:var(--soft);margin:18px 0 8px;letter-spacing:.02em}
+.sec:first-child{margin-top:0}
+.ticket{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;position:sticky;top:12px}
+.ticket h2{margin:0 0 10px;font-size:20px}
+.lines{list-style:none;margin:0;padding:0;min-height:60px}
+.lines li{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.lines .ln{flex:1}
+.qty{display:flex;align-items:center;gap:4px}
+.qty button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:20px;font-weight:700}
+.qty span{min-width:28px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+.empty{color:var(--soft);padding:12px 0}
+.tot{display:flex;justify-content:space-between;font-weight:700;margin:12px 0}
+.btn{border:0;border-radius:12px;padding:12px 18px;min-height:48px;font-weight:700;background:var(--pale);color:var(--ink)}
+.btn.primary{background:var(--blue);color:#fff;width:100%;font-size:20px;min-height:60px}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:transparent;border:1px solid var(--line)}
+.btn.danger{background:var(--out);color:#fff}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#10202f;color:#fff;padding:14px 22px;border-radius:12px;font-weight:600;box-shadow:0 8px 30px #0005;z-index:30}
+.toast[hidden]{display:none}
+/* modal */
+.modal{position:fixed;inset:0;background:#0008;display:grid;place-items:center;padding:16px;z-index:20}
+.modal[hidden]{display:none}
+.dlg{background:var(--panel);border-radius:18px;padding:22px;width:min(460px,100%);max-height:90vh;overflow:auto}
+.dlg h2{margin:0 0 4px;font-size:24px}
+label{display:block;font-weight:600;margin:14px 0 6px}
+input[type=text],input[type=number],select{width:100%;font-size:18px;padding:12px;border-radius:10px;border:2px solid var(--line);background:var(--bg);min-height:50px}
+#dept{font-size:28px;font-weight:700;text-align:center;letter-spacing:.04em}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chips button{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:8px 14px;min-height:40px;font-weight:600}
+.summary{background:var(--bg);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:15px;color:var(--soft)}
+.err{color:var(--out);font-weight:600;min-height:1.5em;margin:6px 0 0}
+/* report + setup */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.card .v{font-size:clamp(28px,4vw,40px);font-weight:800;line-height:1.05;color:var(--blue)}
+:root[data-theme=dark] .card .v{color:#8fc1ee}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .card .v{color:#8fc1ee}}
+.card .l{color:var(--soft);font-size:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+.panel h2{margin:0 0 12px;font-size:20px}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.ph h2{margin:0}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:13px;color:var(--soft);font-weight:700}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scroll{overflow-x:auto}
+.bar{height:8px;background:var(--pale);border-radius:99px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--mid)}
+.bar i.low{background:var(--low)}
+.del{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 10px;min-height:36px;font-size:14px}
+.del.armed{background:var(--out);color:#fff;border-color:var(--out)}
+.note{font-size:14px;color:var(--soft)}
+.setup td input,.setup td select{font-size:16px;min-height:44px;padding:8px}
+.setup td.w{width:110px}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7.5em;margin-inline-start:-8em;white-space:normal;color:var(--soft)}.stack td:empty{display:none}.setup td.w{width:auto}}
+@media(prefers-reduced-motion:reduce){.key{transition:none}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header>
+  <h1>Tradeshow Promo Register</h1>
+  <nav>
+    <a href="#register" data-v="register">Register</a>
+    <a href="#report" data-v="report">Report</a>
+    <a href="#items" data-v="items">Items &amp; stock</a>
+  </nav>
+  <div id="sync">Connecting…</div>
+</header>
+
+<main>
+  <section class="view" id="v-register">
+    <div class="reg">
+      <div id="keys"></div>
+      <aside class="ticket" aria-live="polite">
+        <h2>Current order</h2>
+        <ul class="lines" id="lines"></ul>
+        <div class="tot"><span>Items</span><span id="cartCount">0</span></div>
+        <button class="btn primary" id="checkout" disabled>Check out</button>
+        <div class="row" style="margin-top:10px"><button class="btn ghost" id="clear">Clear order</button></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view" id="v-report" hidden>
+    <div class="cards" id="cards"></div>
+    <div class="panel">
+      <div class="ph"><h2>Charge-backs by department</h2><button class="btn" id="xlsx">Download Excel</button></div>
+      <div class="scroll"><table id="deptTable"></table></div>
+      <p class="note" id="costNote"></p>
+    </div>
+    <div class="panel">
+      <h2>Inventory</h2>
+      <table class="stack" id="invTable"></table>
+    </div>
+    <div class="panel">
+      <h2>All orders</h2>
+      <table class="stack" id="orderTable"></table>
+    </div>
+  </section>
+
+  <section class="view" id="v-items" hidden>
+    <div class="panel">
+      <div class="ph"><h2>Items and starting stock</h2>
+        <div class="row"><button class="btn" id="addItem">Add item</button><button class="btn primary" style="width:auto;min-height:48px;font-size:16px" id="saveItems">Save changes</button></div>
+      </div>
+      <p class="note">Set the promo bag as "Bag" so it shows as the big key. Starting stock is what you brought to the show; "left" counts go down as orders are checked out. Cost each is optional and is used for charge-back totals.</p>
+      <table class="stack setup" id="itemTable"></table>
+      <p class="err" id="itemErr"></p>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <form class="dlg" id="coForm">
+    <h2>Check out</h2>
+    <div class="note">Who should this be charged to?</div>
+    <label for="dept">Department number</label>
+    <input type="text" id="dept" autocomplete="off" inputmode="text" required>
+    <div class="chips" id="recent"></div>
+    <label for="who">Name or note (optional)</label>
+    <input type="text" id="who" autocomplete="off">
+    <div class="summary" id="coSum"></div>
+    <p class="err" id="coErr"></p>
+    <div class="row" style="justify-content:flex-end;margin-top:8px">
+      <button type="button" class="btn ghost" id="cancel">Back</button>
+      <button type="submit" class="btn" style="background:var(--blue);color:#fff" id="confirm">Complete order</button>
+    </div>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+{
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+const money=n=>'$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+let items=[],orders=[],cart={};
+
+/* ---------- storage (Netlify backend) ---------- */
+function setSync(t){$('#sync').textContent=t}
+function cleanItem(i){return{id:String(i.id||Math.random().toString(36).slice(2,9)),name:String(i.name||'Item'),kind:i.kind==='bag'?'bag':'addon',stock:Math.max(0,Math.round(num(i.stock))),cost:Math.max(0,num(i.cost))}}
+async function api(path,opt={}){
+  const r=await fetch('/api/'+path,{...opt,headers:{'content-type':'application/json'}});
+  if(!r.ok)throw new Error('HTTP '+r.status);return r.status===204?null:r.json();
+}
+let lastSig='',polling=false;
+async function refresh(){
+  if(polling)return;polling=true;
+  try{const s=await api('state');
+    const its=(Array.isArray(s.items)?s.items:[]).map(cleanItem),ords=(Array.isArray(s.orders)?s.orders:[]).filter(o=>o&&Array.isArray(o.lines));
+    const sig=JSON.stringify([its,ords.map(o=>o.id)]);
+    const itemsChanged=JSON.stringify(its)!==JSON.stringify(items);
+    items=its;orders=ords;
+    if(sig!==lastSig){lastSig=sig;renderAll(itemsChanged)}
+    setSync('Live: synced across devices · updated '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}));
+  }catch(e){setSync('Can’t reach the server right now. Retrying…')}
+  polling=false;
+}
+function start(){refresh();setInterval(()=>{if(!document.hidden)refresh()},5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()})}
+async function saveItems(list){await api('items',{method:'PUT',body:JSON.stringify({items:list})});items=list;await refresh();renderAll(true)}
+async function addOrder(o){await api('orders',{method:'POST',body:JSON.stringify(o)});await refresh()}
+async function delOrder(id){await api('orders/'+encodeURIComponent(id),{method:'DELETE'});await refresh()}
+
+/* ---------- derived ---------- */
+function givenOut(){const g={};for(const o of orders)for(const l of o.lines)g[l.id]=(g[l.id]||0)+num(l.qty);return g}
+function left(id,g){const it=items.find(i=>i.id===id);return it?it.stock-(g[id]||0):0}
+const sorted=()=>[...items].sort((a,b)=>(a.kind==='bag'?0:1)-(b.kind==='bag'?0:1));
+
+/* ---------- register ---------- */
+function renderKeys(){
+  const g=givenOut(),bags=items.filter(i=>i.kind==='bag'),adds=items.filter(i=>i.kind!=='bag');
+  if(!items.length){$('#keys').innerHTML='<div class="panel"><h2>No items yet</h2><p>Go to <a href="#items">Items &amp; stock</a> to add the promo bag and add-ons.</p></div>';return}
+  const key=i=>{const l=left(i.id,g)-(cart[i.id]||0),low=l>0&&l<=Math.max(5,Math.ceil(i.stock*.1));
+    return `<button class="key ${i.kind==='bag'?'bag':''} ${low?'low':''}" data-add="${esc(i.id)}" ${l<=0?'disabled':''}>
+      ${cart[i.id]?`<span class="badge">${cart[i.id]}</span>`:''}
+      <span class="nm">${esc(i.name)}</span>
+      <span class="st">${l<=0?'<b>Out of stock</b>':`<b>${l}</b> left`}</span></button>`};
+  $('#keys').innerHTML=(bags.length?`<div class="sec">Promo bag</div><div class="keys">${bags.map(key).join('')}</div>`:'')+
+    (adds.length?`<div class="sec">Add-ons</div><div class="keys">${adds.map(key).join('')}</div>`:'');
+}
+function renderTicket(){
+  const ids=Object.keys(cart).filter(id=>cart[id]>0&&items.some(i=>i.id===id));
+  $('#lines').innerHTML=ids.length?ids.map(id=>{const it=items.find(i=>i.id===id);
+    return `<li><span class="ln">${esc(it.name)}</span><span class="qty"><button data-dec="${esc(id)}" aria-label="One less">−</button><span>${cart[id]}</span><button data-add="${esc(id)}" aria-label="One more">+</button></span></li>`}).join('')
+    :'<li class="empty">Tap an item to add it.</li>';
+  const n=ids.reduce((s,id)=>s+cart[id],0);$('#cartCount').textContent=n;$('#checkout').disabled=!n;
+}
+function addToCart(id){const g=givenOut();if(left(id,g)-(cart[id]||0)<=0)return toast('No more in stock');cart[id]=(cart[id]||0)+1;renderKeys();renderTicket()}
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-add]');if(a){addToCart(a.dataset.add);return}
+  const d=e.target.closest('[data-dec]');if(d){const id=d.dataset.dec;cart[id]=(cart[id]||0)-1;if(cart[id]<=0)delete cart[id];renderKeys();renderTicket()}
+});
+$('#clear').onclick=()=>{cart={};renderKeys();renderTicket()};
+
+/* ---------- checkout ---------- */
+function recentDepts(){const seen=[];for(const o of [...orders].sort((a,b)=>num(b.ts)-num(a.ts))){const d=String(o.dept||'');if(d&&!seen.includes(d))seen.push(d);if(seen.length>=8)break}return seen}
+$('#checkout').onclick=()=>{
+  $('#dept').value='';$('#who').value='';$('#coErr').textContent='';
+  $('#recent').innerHTML=recentDepts().map(d=>`<button type="button" data-dept="${esc(d)}">${esc(d)}</button>`).join('');
+  $('#coSum').textContent=Object.keys(cart).map(id=>`${cart[id]} × ${items.find(i=>i.id===id)?.name||''}`).join(' · ');
+  $('#modal').hidden=false;setTimeout(()=>$('#dept').focus(),30);
+};
+$('#recent').onclick=e=>{const b=e.target.closest('[data-dept]');if(b){$('#dept').value=b.dataset.dept;$('#who').focus()}};
+$('#cancel').onclick=()=>{$('#modal').hidden=true};
+$('#modal').onclick=e=>{if(e.target.id==='modal')$('#modal').hidden=true};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').hidden=true});
+$('#coForm').onsubmit=async e=>{
+  e.preventDefault();const dept=$('#dept').value.trim();
+  if(!dept){$('#coErr').textContent='Enter a department number.';return}
+  const g=givenOut();
+  for(const id in cart)if(left(id,g)<cart[id]){$('#coErr').textContent='Not enough '+(items.find(i=>i.id===id)?.name||'stock')+' left. Adjust the order.';return}
+  const lines=Object.keys(cart).map(id=>{const it=items.find(i=>i.id===id);return{id,name:it.name,kind:it.kind,qty:cart[id],cost:it.cost}});
+  $('#confirm').disabled=true;
+  try{await addOrder({ts:Date.now(),dept,note:$('#who').value.trim(),lines});
+    cart={};$('#modal').hidden=true;renderKeys();renderTicket();toast('Order saved — charged to '+dept);
+  }catch(err){$('#coErr').textContent='Couldn’t save. Check the connection and try again.'}
+  $('#confirm').disabled=false;
+};
+
+/* ---------- report ---------- */
+function deptRows(){
+  const m={};for(const o of orders){const d=String(o.dept||'—');const r=m[d]||(m[d]={dept:d,orders:0,qty:{},items:0,cost:0});r.orders++;
+    for(const l of o.lines){r.qty[l.id]=(r.qty[l.id]||0)+num(l.qty);r.items+=num(l.qty);r.cost+=num(l.qty)*num(l.cost)}}
+  return Object.values(m).sort((a,b)=>a.dept.localeCompare(b.dept,undefined,{numeric:true}));
+}
+function itemCols(){const ids=new Set(items.map(i=>i.id)),extra=[];for(const o of orders)for(const l of o.lines)if(!ids.has(l.id)&&!extra.some(x=>x.id===l.id))extra.push({id:l.id,name:l.name+' (removed)'});return[...sorted(),...extra]}
+function renderReport(){
+  const g=givenOut(),rows=deptRows(),cols=itemCols(),hasCost=items.some(i=>i.cost>0)||orders.some(o=>o.lines.some(l=>num(l.cost)>0));
+  const bags=orders.reduce((s,o)=>s+o.lines.filter(l=>l.kind==='bag').reduce((t,l)=>t+num(l.qty),0),0);
+  const tot=rows.reduce((s,r)=>s+r.cost,0),totItems=rows.reduce((s,r)=>s+r.items,0);
+  $('#cards').innerHTML=[[orders.length,'Orders'],[bags,'Bags given out'],[totItems,'Total items'],[rows.length,'Departments'],...(hasCost?[[money(tot),'Total to charge back']]:[])]
+    .map(([v,l])=>`<div class="card"><div class="v">${esc(v)}</div><div class="l">${l}</div></div>`).join('');
+  $('#deptTable').innerHTML=rows.length?`<thead><tr><th>Department</th><th class="n">Orders</th>${cols.map(c=>`<th class="n">${esc(c.name)}</th>`).join('')}<th class="n">Total items</th>${hasCost?'<th class="n">Charge</th>':''}</tr></thead><tbody>`+
+    rows.map(r=>`<tr><td><b>${esc(r.dept)}</b></td><td class="n">${r.orders}</td>${cols.map(c=>`<td class="n">${r.qty[c.id]||''}</td>`).join('')}<td class="n"><b>${r.items}</b></td>${hasCost?`<td class="n"><b>${money(r.cost)}</b></td>`:''}</tr>`).join('')+'</tbody>'
+    :'<tbody><tr><td class="empty">No orders yet.</td></tr></tbody>';
+  $('#costNote').textContent=hasCost?'Charges use the cost each that was set when the order was checked out.':'Add a cost each on Items & stock to see dollar charge-backs.';
+  $('#invTable').innerHTML=`<thead><tr><th>Item</th><th class="n">Starting</th><th class="n">Given out</th><th class="n">Left</th><th>Level</th></tr></thead><tbody>`+
+    (sorted().map(i=>{const out=g[i.id]||0,l=i.stock-out,p=i.stock?Math.max(0,Math.min(100,l/i.stock*100)):0;
+      return `<tr><td>${esc(i.name)}</td><td class="n">${i.stock}</td><td class="n">${out}</td><td class="n"><b>${l}</b></td><td><div class="bar"><i class="${p<=10?'low':''}" style="width:${p}%"></i></div></td></tr>`}).join('')||'<tr><td>No items yet.</td></tr>')+'</tbody>';
+  const os=[...orders].sort((a,b)=>num(b.ts)-num(a.ts));
+  $('#orderTable').innerHTML=`<thead><tr><th>Time</th><th>Department</th><th>Items</th><th>Note</th><th></th></tr></thead><tbody>`+
+    (os.map(o=>`<tr><td>${esc(new Date(num(o.ts)).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</td><td><b>${esc(o.dept)}</b></td><td>${o.lines.map(l=>esc(num(l.qty)+' × '+l.name)).join(', ')}</td><td>${esc(o.note||'')}</td><td><button class="del" data-del="${esc(o.id)}">Delete</button></td></tr>`).join('')||'<tr><td>No orders yet.</td></tr>')+'</tbody>';
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-del]');if(!b)return;
+  if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='Tap to confirm';setTimeout(()=>{b.classList.remove('armed');b.textContent='Delete'},3000);return}
+  try{await delOrder(b.dataset.del);toast('Order deleted')}catch(err){toast('Couldn’t delete that order')}
+});
+
+/* ---------- excel ---------- */
+$('#xlsx').onclick=async()=>{
+  if(typeof XLSX==='undefined')return toast('Excel tool didn’t load. Reload the page.');
+  const cols=itemCols(),rows=deptRows(),g=givenOut(),wb=XLSX.utils.book_new();
+  const s1=[['Department','Orders',...cols.map(c=>c.name),'Total items','Charge ($)'],...rows.map(r=>[r.dept,r.orders,...cols.map(c=>r.qty[c.id]||0),r.items,+r.cost.toFixed(2)])];
+  s1.push(['Total',orders.length,...cols.map(c=>rows.reduce((s,r)=>s+(r.qty[c.id]||0),0)),rows.reduce((s,r)=>s+r.items,0),+rows.reduce((s,r)=>s+r.cost,0).toFixed(2)]);
+  const s2=[['Order time','Department','Name / note','Item','Qty','Cost each ($)','Line charge ($)']];
+  for(const o of [...orders].sort((a,b)=>num(a.ts)-num(b.ts)))for(const l of o.lines)s2.push([new Date(num(o.ts)),String(o.dept),o.note||'',l.name,num(l.qty),num(l.cost),+(num(l.qty)*num(l.cost)).toFixed(2)]);
+  const s3=[['Item','Type','Starting','Given out','Left'],...sorted().map(i=>[i.name,i.kind==='bag'?'Bag':'Add-on',i.stock,g[i.id]||0,i.stock-(g[i.id]||0)])];
+  const add=(data,name,w)=>{const ws=XLSX.utils.aoa_to_sheet(data,{cellDates:true});ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,name);return ws};
+  add(s1,'Charge-backs',[14,8,...cols.map(c=>Math.max(10,c.name.length+2)),12,12]);
+  const w2=add(s2,'All orders',[20,14,22,24,6,14,15]);
+  for(let r=1;r<s2.length;r++){const c=w2[XLSX.utils.encode_cell({r,c:0})];if(c)c.z='mmm d, yyyy h:mm AM/PM'}
+  add(s3,'Inventory',[26,10,10,10,10]);
+  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const name='promo-chargebacks-'+new Date().toISOString().slice(0,10)+'.xlsx';
+  const url=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);toast('Excel file downloaded');
+};
+
+/* ---------- setup ---------- */
+let draft=[];
+function loadDraft(){draft=items.map(i=>({...i}))}
+function renderSetup(){
+  const g=givenOut();
+  $('#itemTable').innerHTML=`<thead><tr><th>Item name</th><th>Type</th><th>Starting stock</th><th>Cost each ($)</th><th class="n">Given out</th><th></th></tr></thead><tbody>`+
+    draft.map((i,k)=>`<tr><td><input type="text" data-k="${k}" data-f="name" value="${esc(i.name)}" aria-label="Item name"></td>
+      <td class="w"><select data-k="${k}" data-f="kind" aria-label="Type"><option value="bag" ${i.kind==='bag'?'selected':''}>Bag</option><option value="addon" ${i.kind!=='bag'?'selected':''}>Add-on</option></select></td>
+      <td class="w"><input type="number" min="0" step="1" data-k="${k}" data-f="stock" value="${i.stock}" aria-label="Starting stock"></td>
+      <td class="w"><input type="number" min="0" step="0.01" data-k="${k}" data-f="cost" value="${i.cost||''}" placeholder="0.00" aria-label="Cost each"></td>
+      <td class="n">${g[i.id]||0}</td><td><button class="del" data-rm="${k}">Remove</button></td></tr>`).join('')+
+    (draft.length?'':'<tr><td>No items yet. Add your promo bag first.</td></tr>')+'</tbody>';
+}
+$('#itemTable').addEventListener('input',e=>{const t=e.target,k=t.dataset.k;if(k==null)return;const f=t.dataset.f;draft[k][f]=f==='stock'||f==='cost'?num(t.value):t.value;dirty=true});
+$('#itemTable').addEventListener('click',e=>{const b=e.target.closest('[data-rm]');if(b){draft.splice(+b.dataset.rm,1);dirty=true;renderSetup()}});
+$('#addItem').onclick=()=>{draft.push({id:Math.random().toString(36).slice(2,9),name:'',kind:draft.some(i=>i.kind==='bag')?'addon':'bag',stock:0,cost:0});dirty=true;renderSetup();
+  const ins=document.querySelectorAll('#itemTable input[data-f=name]');ins[ins.length-1]?.focus()};
+let dirty=false;
+$('#saveItems').onclick=async()=>{
+  const list=draft.filter(i=>String(i.name).trim()).map(i=>cleanItem({...i,name:String(i.name).trim()}));
+  $('#itemErr').textContent='';
+  try{await saveItems(list);dirty=false;toast('Items saved')}
+  catch(err){$('#itemErr').textContent='Couldn’t save. Check the connection and try again.'}
+};
+
+/* ---------- shell ---------- */
+let tt;function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(tt);tt=setTimeout(()=>el.hidden=true,2600)}
+function view(){const v=['register','report','items'].includes(location.hash.slice(1))?location.hash.slice(1):'register';
+  for(const s of ['register','report','items'])$('#v-'+s).hidden=s!==v;
+  document.querySelectorAll('nav a').forEach(a=>a.toggleAttribute('aria-current',a.dataset.v===v)&&a.setAttribute('aria-current','page'));
+  if(v==='items'&&!dirty){loadDraft();renderSetup()}if(v==='report')renderReport()}
+function renderAll(itemsChanged){
+  for(const id in cart)if(!items.some(i=>i.id===id))delete cart[id];
+  renderKeys();renderTicket();if(!$('#v-report').hidden)renderReport();
+  if(itemsChanged&&!$('#v-items').hidden&&!dirty){loadDraft();renderSetup()}
+}
+addEventListener('hashchange',view);view();renderAll(true);
+start();
+}
+</script>
+</body>
+</html>
